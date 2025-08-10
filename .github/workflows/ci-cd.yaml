@@ -1,0 +1,104 @@
+name: CI Pipeline with SonarCloud, Trivy via Ansible & DockerHub
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      KUBECONFIG: ${{ secrets.KUBECONFIG }}
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      IMAGE_NAME: omari87/flask-ci-cd
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run unit tests with coverage
+        run: |
+          pip install coverage
+          coverage run --source=. -m unittest discover -s tests
+          coverage report
+          coverage xml
+          coverage html -d coverage_report
+
+      - name: Install Ansible
+        run: |
+          sudo apt update && sudo apt install -y ansible
+
+      - name: Install Ansible + unzip + Java (for SonarScanner)
+        run: |
+          sudo apt update && sudo apt install -y ansible unzip default-jre
+
+      - name: Run SonarCloud scan with Ansible
+        run: |
+          ansible-playbook ansible/playbooks/sonarcloud.yml -i ansible/inventory/localhost
+
+      - name: Log in to DockerHub
+        run: echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
+
+      - name: Build Docker image
+        run: |
+          docker build -t $IMAGE_NAME:latest .
+
+      - name: Push Docker image to DockerHub
+        run: |
+          docker push $IMAGE_NAME:latest
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage_report/ 
+
+      - name: Run Trivy scan with Ansible
+        run: |
+          ansible-playbook ansible/playbooks/trivy.yml -i ansible/inventory/localhost
+
+      - name: Upload Trivy Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: ansible/playbooks/trivy-reports/trivy-report.html
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region us-east-1 --name my-eks-cluster
+
+      - name: Deploy to EKS
+        run: kubectl apply -f k8s/
