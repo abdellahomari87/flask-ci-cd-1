@@ -1,0 +1,42 @@
+name: Terraform Security (Checkov)
+
+on:
+  push:
+    branches: [ "main" ]   # ajuste si tu utilises une autre branche par défaut
+  pull_request:
+  workflow_dispatch:        # permet de lancer manuellement depuis l'onglet Actions
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  checkov:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Checkov
+        run: |
+          python -m pip install --upgrade pip
+          pip install checkov
+
+      - name: Run Checkov on Terraform (fail on HIGH/CRITICAL)
+        run: |
+          checkov -d eks-cluster-modular \
+            --framework terraform \
+            --output sarif \
+            --output-file-path checkov.sarif \
+            --hard-fail-on HIGH \
+            --hard-fail-on CRITICAL
+
+      - name: Upload SARIF to GitHub code scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov.sarif
