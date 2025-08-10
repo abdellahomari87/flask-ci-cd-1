@@ -1,0 +1,35 @@
+---
+- name: Trivy Docker image scan
+  hosts: local
+  gather_facts: false
+
+  tasks:
+    - name: Install Trivy
+      shell: |
+        sudo apt-get install -y rpm
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+    - name: Clone Trivy repo for HTML template
+      git:
+        repo: https://github.com/aquasecurity/trivy.git
+        dest: /tmp/trivy
+        depth: 1
+
+    - name: Copy Trivy HTML template
+      copy:
+        src: /tmp/trivy/contrib/html.tpl
+        dest: ./html.tpl
+        remote_src: true
+
+    - name: Create output directory
+      file:
+        path: ./trivy-reports
+        state: directory
+
+    - name: Run Trivy image scan
+      shell: |
+        mkdir -p trivy-reports
+        trivy image omari87/flask-ci-cd:latest \
+          --format template \
+          --template "@html.tpl" \
+          -o trivy-reports/trivy-report.html

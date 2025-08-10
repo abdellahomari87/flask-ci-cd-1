@@ -1,0 +1,41 @@
+---
+- name: SonarCloud scan via CLI
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    sonar_token: "{{ lookup('env', 'SONAR_TOKEN') }}"
+    project_key: "abdellahomari87_flask-ci-cd"
+    organization: "abdellahomari87"
+    sonar_host_url: "https://sonarcloud.io"
+
+  tasks:
+    - name: Install Java (required by SonarScanner)
+      apt:
+        name: default-jre
+        state: present
+      become: true
+
+    - name: Download SonarScanner CLI
+      unarchive:
+        src: "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip"
+        dest: /opt/
+        remote_src: yes
+        creates: /opt/sonar-scanner-5.0.1.3006-linux
+
+    - name: Add SonarScanner to PATH
+      lineinfile:
+        path: /etc/profile
+        line: 'export PATH=$PATH:/opt/sonar-scanner-5.0.1.3006-linux/bin'
+        create: yes
+      become: true
+
+    - name: Source profile (workaround for non-login shell)
+      shell: export PATH=$PATH:/opt/sonar-scanner-5.0.1.3006-linux/bin && sonar-scanner \
+        -Dsonar.projectKey={{ project_key }} \
+        -Dsonar.organization={{ organization }} \
+        -Dsonar.sources=. \
+        -Dsonar.host.url={{ sonar_host_url }} \
+        -Dsonar.login={{ sonar_token }}
+      args:
+        chdir: "{{ playbook_dir }}"

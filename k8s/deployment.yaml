@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-deployment
+  labels:
+    app: flask
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flask-ci-cd
+  template:
+    metadata:
+      labels:
+        app: flask-ci-cd
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: flask-container
+          image: omari87/flask-ci-cd:latest
+          ports:
+            - containerPort: 5000
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+            requests:
+              memory: "128Mi"
+              cpu: "250m"
